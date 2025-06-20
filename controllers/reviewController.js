@@ -11,6 +11,7 @@ export const createReview = async (req, res) => {
   try {
     const { productId } = req.params;
     const { rating, comment, reviewerName, reviewerEmail } = req.body;
+    console.log(req.user);
     const userId = req.user?.id; // Optional for anonymous reviews
 
     // Validate product exists
@@ -432,6 +433,172 @@ export const removeReviewImage = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to remove image",
+      error: error.message,
+    });
+  }
+};
+// Admin: Get all reviews with filtering and pagination
+export const getAllReviews = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      isApproved,
+      rating,
+      productId,
+      search
+    } = req.query;
+
+    // Build filter
+    const filter = {};
+    
+    if (isApproved !== undefined) {
+      filter.isApproved = isApproved === 'true';
+    }
+    
+    if (rating) {
+      filter.rating = parseInt(rating);
+    }
+    
+    if (productId) {
+      filter.productId = productId;
+    }
+    
+    if (search) {
+      filter.$or = [
+        { reviewerName: { $regex: search, $options: 'i' } },
+        { comment: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get reviews with pagination
+    const reviews = await Review.find(filter)
+      .populate("userId", "name profilePhoto email")
+      .populate("productId", "name images price")
+      .sort({ [sortBy]: sortOrder === "desc" ? -1 : 1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    // Get total count
+    const total = await Review.countDocuments(filter);
+
+    // Get statistics
+    const stats = await Review.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalReviews: { $sum: 1 },
+          approvedReviews: { $sum: { $cond: ["$isApproved", 1, 0] } },
+          pendingReviews: { $sum: { $cond: ["$isApproved", 0, 1] } },
+          averageRating: { $avg: "$rating" }
+        }
+      }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        reviews,
+        pagination: {
+          current: parseInt(page),
+          pages: Math.ceil(total / limit),
+          total,
+        },
+        stats: stats[0] || {
+          totalReviews: 0,
+          approvedReviews: 0,
+          pendingReviews: 0,
+          averageRating: 0
+        }
+      },
+    });
+  } catch (error) {
+    console.error("Get all reviews error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch reviews",
+      error: error.message,
+    });
+  }
+};
+
+// Admin: Bulk delete reviews
+export const bulkDeleteReviews = async (req, res) => {
+  try {
+    const { reviewIds } = req.body;
+
+    if (!reviewIds || !Array.isArray(reviewIds)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of review IDs",
+      });
+    }
+
+    // Get reviews to delete images from Cloudinary
+    const reviews = await Review.find({ _id: { $in: reviewIds } });
+
+    // Delete images from Cloudinary
+    for (const review of reviews) {
+      if (review.images && review.images.length > 0) {
+        for (const image of review.images) {
+          try {
+            if (image.publicId) {
+              await deleteFromCloudinary(image.publicId);
+            }
+          } catch (deleteError) {
+            console.error("Failed to delete image:", deleteError);
+          }
+        }
+      }
+    }
+
+    // Delete reviews
+    const result = await Review.deleteMany({ _id: { $in: reviewIds } });
+
+    res.status(200).json({
+      success: true,
+      message: `${result.deletedCount} reviews deleted successfully`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error("Bulk delete reviews error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete reviews",
+      error: error.message,
+    });
+  }
+};
+
+// Admin: Bulk approve/disapprove reviews
+export const bulkModerateReviews = async (req, res) => {
+  try {
+    const { reviewIds, isApproved } = req.body;
+
+    if (!reviewIds || !Array.isArray(reviewIds)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of review IDs",
+      });
+    }
+
+    const result = await Review.updateMany(
+      { _id: { $in: reviewIds } },
+      { isApproved: isApproved }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `${result.modifiedCount} reviews ${isApproved ? 'approved' : 'disapproved'} successfully`,
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Bulk moderate reviews error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to moderate reviews",
       error: error.message,
     });
   }
