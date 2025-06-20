@@ -1,5 +1,7 @@
 import Order from "../models/order.model.js";
 import Product from "../models/Product.js"; // Import Product model
+import { sendEmail } from "../utils/emailService.js";
+import { generateOrderConfirmationEmail, generateOrderStatusEmail } from "../utils/emailTemplates.js";
 
 // Create a new order (used by payment verification)
 export const createOrder = async (req, res) => {
@@ -318,6 +320,47 @@ export const getAllOrders = async (req, res) => {
 };
 
 // Update order status (Admin only)
+// export const updateOrderStatus = async (req, res) => {
+//   try {
+//     const { orderId } = req.params;
+//     const { orderStatus, notes } = req.body;
+    
+//     const validStatuses = ["placed", "confirmed", "processing", "shipped", "delivered", "cancelled"];
+    
+//     if (!validStatuses.includes(orderStatus)) {
+//       return res.status(400).json({ error: "Invalid order status" });
+//     }
+    
+//     const updateData = { orderStatus };
+//     if (notes) updateData.notes = notes;
+//     if (orderStatus === "delivered") updateData.deliveredAt = new Date();
+    
+//     // Handle cancellation - free up the booked dates
+//     if (orderStatus === "cancelled") {
+//       await handleOrderCancellation(orderId);
+//     }
+    
+//     const order = await Order.findByIdAndUpdate(
+//       orderId,
+//       updateData,
+//       { new: true }
+//     );
+    
+//     if (!order) {
+//       return res.status(404).json({ error: "Order not found" });
+//     }
+    
+//     res.json({
+//       success: true,
+//       message: "Order status updated successfully",
+//       order
+//     });
+//   } catch (error) {
+//     console.error("Error updating order status:", error);
+//     res.status(500).json({ error: "Could not update order status" });
+//   }
+// };
+
 export const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -327,6 +370,12 @@ export const updateOrderStatus = async (req, res) => {
     
     if (!validStatuses.includes(orderStatus)) {
       return res.status(400).json({ error: "Invalid order status" });
+    }
+    
+    // Get the order first to access customer details
+    const existingOrder = await Order.findById(orderId).populate("userId", "name email");
+    if (!existingOrder) {
+      return res.status(404).json({ error: "Order not found" });
     }
     
     const updateData = { orderStatus };
@@ -342,16 +391,42 @@ export const updateOrderStatus = async (req, res) => {
       orderId,
       updateData,
       { new: true }
-    );
+    ).populate("userId", "name email");
     
-    if (!order) {
-      return res.status(404).json({ error: "Order not found" });
+    // Send status update email
+    try {
+      const customerEmail = order.email || (order.userId && order.userId.email);
+      const customerName = order.customerDetails?.name || (order.userId && order.userId.name);
+      
+      if (customerEmail) {
+        const emailSubject = `Order Update - #${order._id} - ${orderStatus.toUpperCase()}`;
+        const emailContent = generateOrderStatusEmail(
+          {
+            orderId: order._id,
+            total: order.total,
+            items: order.items
+          },
+          orderStatus,
+          {
+            name: customerName,
+            email: customerEmail
+          },
+          notes // Additional message from admin
+        );
+
+        await sendEmail(customerEmail, emailSubject, emailContent);
+        console.log(`✅ Order status email sent to: ${customerEmail}`);
+      }
+    } catch (emailError) {
+      console.error('❌ Failed to send order status email:', emailError);
+      // Don't fail the status update if email fails
     }
     
     res.json({
       success: true,
       message: "Order status updated successfully",
-      order
+      order,
+      emailSent: true // Indicate email was attempted
     });
   } catch (error) {
     console.error("Error updating order status:", error);
