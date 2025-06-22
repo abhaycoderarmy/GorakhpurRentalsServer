@@ -72,16 +72,57 @@ export const createProduct = async (req, res) => {
 
     console.log("Processed available dates:", processedAvailableDates); // Debug log
 
-    let imageUrls = [];
+    // let imageUrls = [];
+
+    // if (req.files && req.files.length > 0) {
+    //   // Upload each image to cloudinary
+    //   for (const file of req.files) {
+    //     try {
+    //       const result = await cloudinary.uploader.upload(file.path, {
+    //         folder: "gorakhpur_rentals",
+    //         resource_type: "image",
+    //       });
+    //       imageUrls.push(result.secure_url);
+          
+    //       // Clean up local file after upload
+    //       if (fs.existsSync(file.path)) {
+    //         fs.unlinkSync(file.path);
+    //       }
+    //     } catch (uploadError) {
+    //       console.error("Error uploading image:", uploadError);
+    //       // Continue with other images even if one fails
+    //     }
+    //   }
+    // }
+
+     let imageUrls = []; // This will now store both images AND videos
 
     if (req.files && req.files.length > 0) {
-      // Upload each image to cloudinary
+      // Upload each file (image or video) to cloudinary
       for (const file of req.files) {
         try {
-          const result = await cloudinary.uploader.upload(file.path, {
-            folder: "gorakhpur_rentals",
-            resource_type: "image",
-          });
+          // Determine if file is image or video based on mimetype
+          const isVideo = file.mimetype.startsWith('video/');
+          
+          let result;
+          if (isVideo) {
+            // Upload video to cloudinary
+            result = await cloudinary.uploader.upload(file.path, {
+              folder: "gorakhpur_rentals",
+              resource_type: "video", // Important: set resource_type to video
+              // Optional: Add video transformation options
+              eager: [
+                { format: "mp4", quality: "auto" }
+              ],
+            });
+          } else {
+            // Upload image to cloudinary (existing logic)
+            result = await cloudinary.uploader.upload(file.path, {
+              folder: "gorakhpur_rentals",
+              resource_type: "image",
+            });
+          }
+          
           imageUrls.push(result.secure_url);
           
           // Clean up local file after upload
@@ -89,8 +130,8 @@ export const createProduct = async (req, res) => {
             fs.unlinkSync(file.path);
           }
         } catch (uploadError) {
-          console.error("Error uploading image:", uploadError);
-          // Continue with other images even if one fails
+          console.error("Error uploading file:", uploadError);
+          // Continue with other files even if one fails
         }
       }
     }
@@ -593,14 +634,47 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    // Add new images
+    // // Add new images
+    // if (req.files && req.files.length > 0) {
+    //   for (const file of req.files) {
+    //     try {
+    //       const result = await cloudinary.uploader.upload(file.path, {
+    //         folder: "gorakhpur_rentals",
+    //         resource_type: "image",
+    //       });
+    //       updatedImages.push(result.secure_url);
+          
+    //       // Clean up local file after upload
+    //       if (fs.existsSync(file.path)) {
+    //         fs.unlinkSync(file.path);
+    //       }
+    //     } catch (uploadError) {
+    //       console.error("Error uploading image:", uploadError);
+    //     }
+    //   }
+    // }
+      // Add new files (images and videos)
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         try {
-          const result = await cloudinary.uploader.upload(file.path, {
-            folder: "gorakhpur_rentals",
-            resource_type: "image",
-          });
+          const isVideo = file.mimetype.startsWith('video/');
+          
+          let result;
+          if (isVideo) {
+            result = await cloudinary.uploader.upload(file.path, {
+              folder: "gorakhpur_rentals",
+              resource_type: "video",
+              eager: [
+                { format: "mp4", quality: "auto" }
+              ],
+            });
+          } else {
+            result = await cloudinary.uploader.upload(file.path, {
+              folder: "gorakhpur_rentals",
+              resource_type: "image",
+            });
+          }
+          
           updatedImages.push(result.secure_url);
           
           // Clean up local file after upload
@@ -608,7 +682,7 @@ export const updateProduct = async (req, res) => {
             fs.unlinkSync(file.path);
           }
         } catch (uploadError) {
-          console.error("Error uploading image:", uploadError);
+          console.error("Error uploading file:", uploadError);
         }
       }
     }
