@@ -10,7 +10,8 @@ import {
   removeReviewImage,
    getAllReviews,
   bulkDeleteReviews,
-  bulkModerateReviews
+  bulkModerateReviews,
+  getFiveStarReviews
 } from '../controllers/reviewController.js';
 import { protect, adminOnly } from '../middleware/auth.middleware.js';
 import upload from '../middleware/upload.middleware.js';
@@ -19,6 +20,7 @@ import { authenticateV2 } from '../middleware/role.middleware.js';
 const router = express.Router();
 
 // Public routes
+router.get('/five-star', getFiveStarReviews); // Get 5-star reviews across all products
 router.get('/product/:productId', getProductReviews); // Get all reviews for a product
 router.get('/:reviewId', getReview); // Get single review
 

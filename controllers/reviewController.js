@@ -603,3 +603,28 @@ export const bulkModerateReviews = async (req, res) => {
     });
   }
 };
+export const getFiveStarReviews = async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+    
+    const reviews = await Review.find({
+      rating: 5,
+      isApproved: true
+    })
+    .populate('userId', 'name profilePhoto')
+    .populate('productId', 'name')
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit));
+
+    res.status(200).json({
+      success: true,
+      data: reviews
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch reviews",
+      error: error.message
+    });
+  }
+};
