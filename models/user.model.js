@@ -6,7 +6,7 @@ const userSchema = new mongoose.Schema(
     isVerified: { type: Boolean, default: false },
     otp: String,
     password: String,
-    googleId: String,
+    isGoogleUser: { type: Boolean, default: false },
     resetPasswordOTP: String,
     resetPasswordOTPExpires: Date,
     isAdmin: { type: Boolean, default: false },

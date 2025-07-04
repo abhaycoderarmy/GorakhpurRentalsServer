@@ -1,8 +1,10 @@
 import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { OAuth2Client } from "google-auth-library";
 import { sendOTP , sendOTP2} from "../config/nodemailer.js";
 
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 export const sendOtpToEmail = async (req, res) => {
   const { email } = req.body;
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -60,19 +62,40 @@ export const loginUser = async (req, res) => {
 };
 
 export const googleLogin = async (req, res) => {
-  const { name, email, googleId } = req.body;
+  const { token } = req.body;
 
   try {
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { email, name, picture } = payload;
+
     let user = await User.findOne({ email });
 
     if (!user) {
-      user = await User.create({ name, email, googleId, isVerified: true });
+      user = await User.create({
+        name,
+        email,
+        isVerified: true,
+        profilePhoto: picture,
+        password: "google-auth", // optional placeholder
+        isGoogleUser: true,
+      });
     }
 
-    const token = jwt.sign({ userId: user._id, isAdmin: user.isAdmin }, process.env.JWT_SECRET);
-    res.status(200).json({ token, user });
-  } catch {
-    res.status(500).json({ message: "Google login failed" });
+    const jwtToken = jwt.sign(
+      { userId: user._id, isAdmin: user.isAdmin },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.status(200).json({ token: jwtToken, user });
+  } catch (error) {
+    console.error("Google login failed:", error);
+    res.status(401).json({ message: "Invalid Google token" });
   }
 };
 // Fix getUserProfile to always return JSON
