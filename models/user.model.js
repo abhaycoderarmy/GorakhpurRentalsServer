@@ -1,13 +1,14 @@
 import mongoose from "mongoose";
 const userSchema = new mongoose.Schema(
   {
-    name: { type: String, 
-      required: true, },
+    name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     isVerified: { type: Boolean, default: false },
     otp: String,
     password: String,
     googleId: String,
+    resetPasswordOTP: String,
+    resetPasswordOTPExpires: Date,
     isAdmin: { type: Boolean, default: false },
     profilePhoto: String,
     contactNumber: String,

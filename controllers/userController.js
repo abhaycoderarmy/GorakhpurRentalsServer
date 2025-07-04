@@ -1,7 +1,7 @@
 import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { sendOTP } from "../config/nodemailer.js";
+import { sendOTP , sendOTP2} from "../config/nodemailer.js";
 
 export const sendOtpToEmail = async (req, res) => {
   const { email } = req.body;
@@ -157,5 +157,133 @@ export const resetPassword = async (req, res) => {
   } catch (error) {
     console.error("Password reset error:", error);
     res.status(500).json({ message: "Failed to reset password" });
+  }
+};
+
+// Function to send OTP for password reset
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: "Email is required" });
+  }
+
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ message: "Invalid email format" });
+  }
+
+  try {
+    // Check if user exists
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found with this email" });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store OTP in user document with expiration (15 minutes)
+    user.resetPasswordOTP = otp;
+    user.resetPasswordOTPExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    await user.save();
+
+    // Send OTP via email
+    await sendOTP2(email, otp);
+
+    res.status(200).json({ 
+      message: "OTP sent successfully to your email",
+      email: email
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    
+    // Check if it's an email sending error
+    if (error.message.includes('Email sending failed')) {
+      return res.status(500).json({ 
+        message: "Failed to send email. Please check your email configuration." 
+      });
+    }
+    
+    res.status(500).json({ message: "Failed to send OTP. Please try again." });
+  }
+};
+
+// Function to verify OTP for password reset
+export const verifyResetOTP = async (req, res) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    return res.status(400).json({ message: "Email and OTP are required" });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if OTP matches and hasn't expired
+    if (user.resetPasswordOTP !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    if (user.resetPasswordOTPExpires < new Date()) {
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    res.status(200).json({ 
+      message: "OTP verified successfully",
+      email: email
+    });
+  } catch (error) {
+    console.error("OTP verification error:", error);
+    res.status(500).json({ message: "Failed to verify OTP. Please try again." });
+  }
+};
+
+// Function to reset password after OTP verification
+export const resetPasswordConfirm = async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json({ message: "Email, OTP, and new password are required" });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: "Password must be at least 6 characters long" });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Verify OTP one more time
+    if (user.resetPasswordOTP !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    if (user.resetPasswordOTPExpires < new Date()) {
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user password and clear OTP fields
+    user.password = hashedPassword;
+    user.resetPasswordOTP = undefined;
+    user.resetPasswordOTPExpires = undefined;
+    await user.save();
+
+    res.status(200).json({ 
+      message: "Password reset successfully. You can now login with your new password."
+    });
+  } catch (error) {
+    console.error("Password reset error:", error);
+    res.status(500).json({ message: "Failed to reset password. Please try again." });
   }
 };
