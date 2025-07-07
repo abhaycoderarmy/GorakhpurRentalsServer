@@ -152,10 +152,10 @@ export const updateUserProfile = async (req, res) => {
 
 // Fix resetPassword with better validation
 export const resetPassword = async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
+  const { newPassword } = req.body;
 
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ message: "Current password and new password are required" });
+  if (!newPassword) {
+    return res.status(400).json({ message: "New password is required" });
   }
 
   if (newPassword.length < 6) {
@@ -166,11 +166,6 @@ export const resetPassword = async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
-    }
-
-    const match = await bcrypt.compare(currentPassword, user.password);
-    if (!match) {
-      return res.status(400).json({ message: "Current password is incorrect" });
     }
 
     user.password = await bcrypt.hash(newPassword, 10);
