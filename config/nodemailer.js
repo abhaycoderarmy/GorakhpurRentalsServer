@@ -63,3 +63,46 @@ export const sendOTP2 = async (email, otp) => {
     throw new Error(`Email sending failed: ${error.message}`);
   }
 };
+// Add this function to your existing nodemailer.js file
+
+export const sendContactNotification = async (contactMessage) => {
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: process.env.ADMIN_EMAIL, // Add this to your .env file
+    subject: `New Contact Message - ${contactMessage.subject}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #ec4899;">New Contact Message Received</h2>
+        
+        <div style="background-color: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3 style="color: #374151; margin-top: 0;">Message Details</h3>
+          <p><strong>Name:</strong> ${contactMessage.firstName} ${contactMessage.lastName}</p>
+          <p><strong>Email:</strong> ${contactMessage.email}</p>
+          <p><strong>Phone:</strong> ${contactMessage.phone || 'Not provided'}</p>
+          <p><strong>Subject:</strong> ${contactMessage.subject}</p>
+          <p><strong>Priority:</strong> ${contactMessage.priority}</p>
+          <p><strong>Message:</strong></p>
+          <div style="background-color: white; padding: 15px; border-radius: 4px; margin-top: 10px;">
+            ${contactMessage.message}
+          </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <p style="color: #6b7280; font-size: 14px;">
+            Please log in to your admin dashboard to respond to this message.
+          </p>
+        </div>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};

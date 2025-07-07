@@ -18,6 +18,7 @@ import newsletterRoutes from './routes/newsletter.route.js';
 import cartRoutes from './routes/cart.route.js';
 import paymentRouter from './routes/payment.js';
 import reviewRoutes from './routes/review.route.js'
+import contactRoutes from './routes/contact.route.js';
 
 
 // ES modules __dirname equivalent
@@ -65,6 +66,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/newsletter", newsletterRoutes);
 app.use('/api/v1/payment', paymentRouter);
 app.use("/api/v1/cart", cartRoutes); 
+app.use('/api/v1/contact', contactRoutes);
 app.get('/', (req, res) => {
   res.send('API Running...');
 });
