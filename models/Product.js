@@ -18,7 +18,6 @@ const productSchema = new mongoose.Schema({
   },
   rentDuration: {
     type: [String],
-    default: ["2 days", "5 days", "1 week"],
   },
   category: {
     type: String,
