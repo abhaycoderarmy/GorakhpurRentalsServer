@@ -7,6 +7,7 @@ import { sendContactNotification } from "../config/nodemailer.js";
 export const createGuestContactMessage = async (req, res) => {
   try {
     const { firstName, lastName, email, phone, subject, message } = req.body;
+    const io = req.app.get('io');
 
     // Validate required fields
     if (!firstName || !lastName || !email || !subject || !message) {
@@ -23,10 +24,23 @@ export const createGuestContactMessage = async (req, res) => {
       phone,
       subject,
       message,
-      isGuest: true, // Add this flag to identify guest messages
+      isGuest: true,
     });
 
     await contactMessage.save();
+
+    // Emit to all admins about new guest message
+    io.to('admin_room').emit('new_contact_message', {
+      id: contactMessage._id,
+      firstName: contactMessage.firstName,
+      lastName: contactMessage.lastName,
+      email: contactMessage.email,
+      subject: contactMessage.subject,
+      isGuest: true,
+      createdAt: contactMessage.createdAt,
+      status: contactMessage.status,
+      priority: contactMessage.priority
+    });
 
     // Send notification to admin (optional)
     try {
@@ -59,6 +73,7 @@ export const createContactMessage = async (req, res) => {
   try {
     const { firstName, lastName, email, phone, subject, message } = req.body;
     const userId = req.user.id;
+    const io = req.app.get('io');
 
     // Validate required fields
     if (!firstName || !lastName || !email || !subject || !message) {
@@ -83,6 +98,20 @@ export const createContactMessage = async (req, res) => {
     // Populate user details
     await contactMessage.populate("userId", "name email");
 
+    // Emit to all admins about new message
+    io.to('admin_room').emit('new_contact_message', {
+      id: contactMessage._id,
+      userId: contactMessage.userId,
+      firstName: contactMessage.firstName,
+      lastName: contactMessage.lastName,
+      email: contactMessage.email,
+      subject: contactMessage.subject,
+      isGuest: false,
+      createdAt: contactMessage.createdAt,
+      status: contactMessage.status,
+      priority: contactMessage.priority
+    });
+
     // Send notification to admin (optional)
     try {
       await sendContactNotification(contactMessage);
@@ -102,7 +131,6 @@ export const createContactMessage = async (req, res) => {
   }
 };
 
-// Get all contact messages for a user
 export const getUserContactMessages = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -132,7 +160,6 @@ export const getUserContactMessages = async (req, res) => {
   }
 };
 
-// Get all contact messages for admin
 export const getAllContactMessages = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -194,7 +221,6 @@ export const getAllContactMessages = async (req, res) => {
   }
 };
 
-// Get single contact message
 export const getContactMessage = async (req, res) => {
   try {
     const { id } = req.params;
@@ -235,6 +261,7 @@ export const addResponseToMessage = async (req, res) => {
     const { message } = req.body;
     const userId = req.user.id;
     const isAdmin = req.user.isAdmin;
+    const io = req.app.get('io');
 
     if (!message) {
       return res.status(400).json({
@@ -258,11 +285,14 @@ export const addResponseToMessage = async (req, res) => {
     }
 
     // Add response
-    contactMessage.responses.push({
+    const newResponse = {
       message,
       sentBy: userId,
       isAdmin,
-    });
+      sentAt: new Date()
+    };
+
+    contactMessage.responses.push(newResponse);
 
     // Update status if admin responds
     if (isAdmin && contactMessage.status === "pending") {
@@ -273,6 +303,43 @@ export const addResponseToMessage = async (req, res) => {
 
     // Populate the new response
     await contactMessage.populate("responses.sentBy", "name email isAdmin");
+
+    // Emit real-time response to contact room
+    io.to(`contact_${id}`).emit('new_response', {
+      contactId: id,
+      response: {
+        _id: newResponse._id,
+        message: newResponse.message,
+        sentBy: {
+          _id: userId,
+          name: req.user.name,
+          email: req.user.email,
+          isAdmin: isAdmin
+        },
+        sentAt: newResponse.sentAt,
+        isAdmin: isAdmin
+      }
+    });
+
+    // If admin responds, notify the user
+    if (isAdmin && contactMessage.userId) {
+      io.to(`user_${contactMessage.userId}`).emit('admin_response', {
+        contactId: id,
+        subject: contactMessage.subject,
+        adminName: req.user.name,
+        message: message
+      });
+    }
+
+    // If user responds, notify admins
+    if (!isAdmin) {
+      io.to('admin_room').emit('user_response', {
+        contactId: id,
+        subject: contactMessage.subject,
+        userName: req.user.name,
+        message: message
+      });
+    }
 
     res.status(200).json({
       message: "Response added successfully",
@@ -291,6 +358,7 @@ export const updateContactMessage = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, priority, adminNotes, assignedTo } = req.body;
+    const io = req.app.get('io');
 
     const contactMessage = await ContactMessage.findByIdAndUpdate(
       id,
@@ -311,6 +379,25 @@ export const updateContactMessage = async (req, res) => {
       });
     }
 
+    // Emit status update to contact room
+    io.to(`contact_${id}`).emit('status_update', {
+      contactId: id,
+      status: contactMessage.status,
+      priority: contactMessage.priority,
+      assignedTo: contactMessage.assignedTo,
+      updatedBy: req.user.name
+    });
+
+    // Notify user if status changed
+    if (contactMessage.userId && status) {
+      io.to(`user_${contactMessage.userId}`).emit('contact_status_changed', {
+        contactId: id,
+        subject: contactMessage.subject,
+        newStatus: status,
+        updatedBy: req.user.name
+      });
+    }
+
     res.status(200).json({
       message: "Message updated successfully",
       contactMessage,
@@ -327,6 +414,7 @@ export const updateContactMessage = async (req, res) => {
 export const deleteContactMessage = async (req, res) => {
   try {
     const { id } = req.params;
+    const io = req.app.get('io');
 
     const contactMessage = await ContactMessage.findByIdAndDelete(id);
 
@@ -335,6 +423,12 @@ export const deleteContactMessage = async (req, res) => {
         message: "Message not found",
       });
     }
+
+    // Emit deletion to admin room
+    io.to('admin_room').emit('contact_deleted', {
+      contactId: id,
+      deletedBy: req.user.name
+    });
 
     res.status(200).json({
       message: "Message deleted successfully",
@@ -346,3 +440,4 @@ export const deleteContactMessage = async (req, res) => {
     });
   }
 };
+
